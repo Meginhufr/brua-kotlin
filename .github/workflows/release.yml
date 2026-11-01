@@ -20,7 +20,8 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew test
-      - run: ./gradlew publishToMavenCentral -PreleaseVersion="${GITHUB_REF_NAME#v}" --no-configuration-cache
+      # Uploads, waits for the portal's validation and publishes; plain publishToMavenCentral would stop at a manual publish.
+      - run: ./gradlew publishAndReleaseToMavenCentral -PreleaseVersion="${GITHUB_REF_NAME#v}" --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
