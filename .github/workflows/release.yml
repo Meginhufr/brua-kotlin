@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew test
       - run: ./gradlew publishToMavenCentral -PreleaseVersion="${GITHUB_REF_NAME#v}" --no-configuration-cache

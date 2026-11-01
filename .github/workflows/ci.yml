@@ -13,7 +13,8 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      # brua runs the shared selection fixtures; brua-android renders BruaImage under Robolectric with the runner's Android SDK.
+      # brua runs the shared selection fixtures; brua-android renders BruaImage under Robolectric with the runner's Android SDK,
+      # on Java 21, which Robolectric's newest Android images need.
       - run: ./gradlew test
