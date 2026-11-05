@@ -95,7 +95,7 @@ class BruaImageTest {
         }
 
         assertEquals("https://cdn.example/icon/light@1x.png", requested())
-        assertEquals(listOf("https://cdn.example/assets/org/icon.json"), edge.requests)
+        assertEquals(listOf("https://cdn.example/assets/org/icon.json?lang=en-US"), edge.requests, "the device's languages, so each has its own cache entry")
         rule.onNodeWithContentDescription("Settings").assertExists()
     }
 

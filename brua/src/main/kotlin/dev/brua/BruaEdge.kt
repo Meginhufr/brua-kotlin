@@ -1,5 +1,6 @@
 package dev.brua
 
+import java.net.URLEncoder
 import kotlinx.serialization.json.Json
 
 /**
@@ -13,7 +14,14 @@ import kotlinx.serialization.json.Json
 public class BruaEdge(base: String, public val lang: String? = null) {
     private val base = base.trimEnd('/')
 
-    public fun url(id: String): String = "$base/$id.json" + (lang?.let { "?lang=$it" } ?: "")
+    /**
+     * The JSON URL of the asset's current release. Without [lang] it carries [languages], the device's in order, as
+     * the edge reads `?lang=` like Accept-Language, so each language has its own cache entry in the client.
+     */
+    public fun url(id: String, languages: List<String> = emptyList()): String {
+        val wanted = lang ?: BruaHints.acceptLanguage(languages).takeIf { it.isNotEmpty() }
+        return "$base/$id.json" + (wanted?.let { "?lang=" + URLEncoder.encode(it, "UTF-8").replace("+", "%20") } ?: "")
+    }
 
     public fun parse(json: String): AssetResponse = Json.decodeFromString(json)
 }

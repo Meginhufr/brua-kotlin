@@ -13,7 +13,7 @@ A backend takes `dev.brua:brua` alone. To build from source instead, `includeBui
 
 ## From an id
 
-Your backend passes asset ids on, and the app reads each asset's current release from the edge with no key (SPEC.md 5.3). One client per app, with your organization's asset prefix; give its OkHttp client a cache and each asset is kept for the edge's minute, so a merge in Brua reaches the screen within that minute with no release of yours:
+Your backend passes asset ids on, and the app reads each asset's current release from the edge with no key (SPEC.md 5.3). One client per app, with your organization's asset prefix. It remembers every release it reads: from memory for the edge's minute, read again after that, and kept when the edge can't be reached (with an OkHttp cache, across restarts too), so a merge in Brua reaches the screen within that minute with no release of yours. `cachedAsset(id)` gives the last release read at once, and `prefetch(ids)` reads a list's ids before it appears:
 
 ```kotlin
 import dev.brua.android.BruaClient

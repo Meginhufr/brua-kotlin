@@ -86,7 +86,9 @@ public fun BruaImage(
 
 /**
  * The asset with this id in its current release, read from the edge through [client], so a merge reaches this image
- * within a minute with no backend involved. Nothing shows until it has loaded, or when nothing is released under the id.
+ * within a minute with no backend involved. A release the client has read before draws on the first frame, so an
+ * item scrolled back into view doesn't blink; otherwise nothing shows until it has loaded, or when nothing is
+ * released under the id.
  */
 @Composable
 public fun BruaImage(
@@ -99,11 +101,13 @@ public fun BruaImage(
     contentScale: ContentScale = ContentScale.Fit,
     placeholder: Painter? = ColorPainter(Color.Gray.copy(alpha = 0.15f)),
 ) {
-    val asset by produceState<AssetResponse?>(null, id, client) {
+    // The client keeps the last known release when the edge can't be reached, so an error here means none is known.
+    val asset by produceState(client.cachedAsset(id), id, client) {
+        value = client.cachedAsset(id)
         value = try {
             client.asset(id)
         } catch (e: IOException) {
-            null
+            value
         }
     }
     asset?.let { BruaImage(it, modifier, colorScheme, supportedTypes, imageLoader, contentScale, placeholder) }
