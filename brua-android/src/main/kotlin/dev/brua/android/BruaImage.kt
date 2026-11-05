@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -16,6 +17,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
@@ -29,8 +31,10 @@ import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import dev.brua.AssetResponse
+import dev.brua.BruaLayout
 import dev.brua.ClientState
 import dev.brua.ColorScheme
+import dev.brua.ObjectFit
 import dev.brua.VariantSelector
 import java.io.IOException
 
@@ -41,6 +45,10 @@ import java.io.IOException
  *
  * Without a size from [modifier], the image takes the asset's designed size in dp, shrunk to the width available.
  * Pass [colorScheme] when the app switches themes itself; left null, the system appearance decides.
+ *
+ * The asset's `objectFit` decides the shape: `contain` keeps the asset's proportions ([ContentScale.Fit]); `cover`
+ * fills the box [modifier] gives it ([ContentScale.Crop]) and crops around the asset's `objectPosition`, with a file
+ * sharp enough for the size it is drawn at. [contentScale] and [alignment] override the asset's.
  */
 @Composable
 public fun BruaImage(
@@ -49,19 +57,30 @@ public fun BruaImage(
     colorScheme: ColorScheme? = null,
     supportedTypes: List<String> = AndroidClient.supportedTypes,
     imageLoader: ImageLoader = SingletonImageLoader.get(LocalPlatformContext.current),
-    contentScale: ContentScale = ContentScale.Fit,
+    contentScale: ContentScale? = null,
     placeholder: Painter? = ColorPainter(Color.Gray.copy(alpha = 0.15f)),
+    alignment: Alignment? = null,
 ) {
     val density = LocalDensity.current.density
+    val scale = contentScale ?: if (BruaLayout.objectFit(asset) == ObjectFit.Cover) ContentScale.Crop else ContentScale.Fit
+    val (x, y) = BruaLayout.objectPosition(asset)
+    val placement = alignment ?: BiasAlignment(x * 2 - 1, y * 2 - 1)
     val dark = colorScheme?.let { it == ColorScheme.Dark } ?: isSystemInDarkTheme()
     val reducedMotion = rememberReducedMotion()
     val ratio = asset.width.toFloat() / maxOf(asset.height, 1)
 
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        // A crop fills the box it is given, when the box has a height; otherwise the asset's proportions hold it.
+        val fills = scale == ContentScale.Crop && constraints.hasBoundedWidth && constraints.hasBoundedHeight
         val width = when {
-            constraints.hasFixedWidth -> maxWidth
+            fills || constraints.hasFixedWidth -> maxWidth
             constraints.hasBoundedWidth -> minOf(maxWidth, asset.width.dp)
             else -> asset.width.dp
+        }
+        val drawnWidth = if (fills) {
+            BruaLayout.targetWidth(asset, maxWidth.value.toDouble(), maxHeight.value.toDouble(), ObjectFit.Cover.value)
+        } else {
+            width.value.toDouble()
         }
         val url = VariantSelector.url(
             asset,
@@ -70,16 +89,17 @@ public fun BruaImage(
                 colorScheme = if (dark) ColorScheme.Dark else ColorScheme.Light,
                 reducedMotion = reducedMotion,
                 scale = density.toDouble(),
-                targetWidth = width.value.toDouble(),
+                targetWidth = drawnWidth,
             ),
         )
         AsyncImage(
             model = url,
             contentDescription = asset.alt.takeUnless { asset.isDecorative },
             imageLoader = imageLoader,
-            modifier = Modifier.widthIn(max = width).aspectRatio(ratio),
+            modifier = if (fills) Modifier.fillMaxSize() else Modifier.widthIn(max = width).aspectRatio(ratio),
             placeholder = placeholder,
-            contentScale = contentScale,
+            contentScale = scale,
+            alignment = placement,
         )
     }
 }
@@ -98,8 +118,9 @@ public fun BruaImage(
     colorScheme: ColorScheme? = null,
     supportedTypes: List<String> = AndroidClient.supportedTypes,
     imageLoader: ImageLoader = SingletonImageLoader.get(LocalPlatformContext.current),
-    contentScale: ContentScale = ContentScale.Fit,
+    contentScale: ContentScale? = null,
     placeholder: Painter? = ColorPainter(Color.Gray.copy(alpha = 0.15f)),
+    alignment: Alignment? = null,
 ) {
     // The client keeps the last known release when the edge can't be reached, so an error here means none is known.
     val asset by produceState(client.cachedAsset(id), id, client) {
@@ -110,7 +131,7 @@ public fun BruaImage(
             value
         }
     }
-    asset?.let { BruaImage(it, modifier, colorScheme, supportedTypes, imageLoader, contentScale, placeholder) }
+    asset?.let { BruaImage(it, modifier, colorScheme, supportedTypes, imageLoader, contentScale, placeholder, alignment) }
 }
 
 /** Whether "Remove animations" is on, updated when the setting changes. */

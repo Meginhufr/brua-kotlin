@@ -74,6 +74,32 @@ class BruaImageTest {
     }
 
     @Test
+    @Config(sdk = [36], qualifiers = "w800dp-h800dp")
+    fun a_cover_asset_fills_its_box_with_a_file_for_the_size_it_is_drawn_at() {
+        // A 16:9 photo filling a 200 dp square is drawn about 356 dp wide: 711 px at 2x, so the 1280 file.
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(2f)) {
+                BruaImage(Sample.photo.copy(objectFit = "cover", objectPosition = "30% 50%"), Modifier.size(200.dp),
+                    supportedTypes = listOf("image/avif"), imageLoader = loader)
+            }
+        }
+
+        assertEquals("https://cdn.example/hero/1280.avif", requested())
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w800dp-h800dp")
+    fun contain_in_the_same_box_is_drawn_at_the_box_width() {
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(2f)) {
+                BruaImage(Sample.photo.copy(objectFit = "contain"), Modifier.size(200.dp), supportedTypes = listOf("image/avif"), imageLoader = loader)
+            }
+        }
+
+        assertEquals("https://cdn.example/hero/640.avif", requested())
+    }
+
+    @Test
     @Config(sdk = [36], qualifiers = "night")
     fun the_system_appearance_decides_when_no_scheme_is_given() {
         rule.setContent {

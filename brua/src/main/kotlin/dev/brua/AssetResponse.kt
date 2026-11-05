@@ -21,6 +21,10 @@ public data class AssetResponse(
     val alt: String,
     val lang: String? = null,
     val variants: List<AssetVariant> = emptyList(),
+    /** How a layout's box of another shape holds the asset, as CSS object-fit: "contain" or "cover". */
+    val objectFit: String? = null,
+    /** Where it sits in the box, as CSS object-position: "50% 35%", the point a cover crop keeps in view. */
+    val objectPosition: String? = null,
 ) {
     val isDecorative: Boolean get() = alt.isEmpty()
 }
