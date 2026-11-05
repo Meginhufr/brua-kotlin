@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.SubcomposeAsyncImageContent
 import coil3.compose.LocalPlatformContext
 import dev.brua.AssetResponse
 import dev.brua.BruaLayout
@@ -49,6 +52,9 @@ import java.io.IOException
  * The asset's `objectFit` decides the shape: `contain` keeps the asset's proportions ([ContentScale.Fit]); `cover`
  * fills the box [modifier] gives it ([ContentScale.Crop]) and crops around the asset's `objectPosition`, with a file
  * sharp enough for the size it is drawn at. [contentScale] and [alignment] override the asset's.
+ *
+ * [loading] and [error] draw the file's loading and failure, laid out where the picture goes; left out, [placeholder]
+ * shows while the file loads and nothing on failure. They subcompose, so leave them out where a plain placeholder will do.
  */
 @Composable
 public fun BruaImage(
@@ -60,6 +66,8 @@ public fun BruaImage(
     contentScale: ContentScale? = null,
     placeholder: Painter? = ColorPainter(Color.Gray.copy(alpha = 0.15f)),
     alignment: Alignment? = null,
+    loading: (@Composable () -> Unit)? = null,
+    error: (@Composable (BruaImageError) -> Unit)? = null,
 ) {
     val density = LocalDensity.current.density
     val scale = contentScale ?: if (BruaLayout.objectFit(asset) == ObjectFit.Cover) ContentScale.Crop else ContentScale.Fit
@@ -92,23 +100,40 @@ public fun BruaImage(
                 targetWidth = drawnWidth,
             ),
         )
-        AsyncImage(
-            model = url,
-            contentDescription = asset.alt.takeUnless { asset.isDecorative },
-            imageLoader = imageLoader,
-            modifier = if (fills) Modifier.fillMaxSize() else Modifier.widthIn(max = width).aspectRatio(ratio),
-            placeholder = placeholder,
-            contentScale = scale,
-            alignment = placement,
-        )
+        val box = if (fills) Modifier.fillMaxSize() else Modifier.widthIn(max = width).aspectRatio(ratio)
+        if (loading == null && error == null) {
+            AsyncImage(
+                model = url,
+                contentDescription = asset.alt.takeUnless { asset.isDecorative },
+                imageLoader = imageLoader,
+                modifier = box,
+                placeholder = placeholder,
+                contentScale = scale,
+                alignment = placement,
+            )
+        } else {
+            SubcomposeAsyncImage(
+                model = url,
+                contentDescription = asset.alt.takeUnless { asset.isDecorative },
+                imageLoader = imageLoader,
+                modifier = box,
+                loading = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { loading?.invoke() } },
+                success = { SubcomposeAsyncImageContent() },
+                error = { state ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { error?.invoke(BruaImageError.File(url, state.result.throwable)) }
+                },
+                contentScale = scale,
+                alignment = placement,
+            )
+        }
     }
 }
 
 /**
  * The asset with this id in its current release, read from the edge through [client], so a merge reaches this image
  * within a minute with no backend involved. A release the client has read before draws on the first frame, so an
- * item scrolled back into view doesn't blink; otherwise nothing shows until it has loaded, or when nothing is
- * released under the id.
+ * item scrolled back into view doesn't blink. Until the asset is known, [loading] shows in [modifier]'s box; when
+ * nothing is released or the edge can't be reached, [error] does, with the reason. Left out, nothing shows then.
  */
 @Composable
 public fun BruaImage(
@@ -121,17 +146,36 @@ public fun BruaImage(
     contentScale: ContentScale? = null,
     placeholder: Painter? = ColorPainter(Color.Gray.copy(alpha = 0.15f)),
     alignment: Alignment? = null,
+    loading: (@Composable () -> Unit)? = null,
+    error: (@Composable (BruaImageError) -> Unit)? = null,
 ) {
-    // The client keeps the last known release when the edge can't be reached, so an error here means none is known.
-    val asset by produceState(client.cachedAsset(id), id, client) {
-        value = client.cachedAsset(id)
-        value = try {
-            client.asset(id)
+    val state by produceState(BruaAssetState.of(client.cachedAsset(id)), id, client) {
+        BruaAssetState.of(client.cachedAsset(id))?.let { value = it }
+        value = BruaAssetState.read(id, client)
+    }
+    when (val current = state) {
+        is BruaAssetState.Loaded ->
+            BruaImage(current.asset, modifier, colorScheme, supportedTypes, imageLoader, contentScale, placeholder, alignment, loading, error)
+        is BruaAssetState.Failed -> if (error != null) Box(modifier, contentAlignment = Alignment.Center) { error(current.error) }
+        null -> if (loading != null) Box(modifier, contentAlignment = Alignment.Center) { loading() }
+    }
+}
+
+/** How far a [BruaImage] has got with the asset itself, before its file; null while it loads. */
+internal sealed class BruaAssetState {
+    data class Loaded(val asset: AssetResponse) : BruaAssetState()
+    data class Failed(val error: BruaImageError) : BruaAssetState()
+
+    companion object {
+        fun of(remembered: AssetResponse?): BruaAssetState? = remembered?.let(::Loaded)
+
+        /** The client keeps the last known release when the edge can't be reached, so an error means none is known. */
+        suspend fun read(id: String, client: BruaClient): BruaAssetState = try {
+            client.asset(id)?.let(::Loaded) ?: Failed(BruaImageError.NotReleased)
         } catch (e: IOException) {
-            value
+            Failed(BruaImageError.Unreachable(e))
         }
     }
-    asset?.let { BruaImage(it, modifier, colorScheme, supportedTypes, imageLoader, contentScale, placeholder, alignment) }
 }
 
 /** Whether "Remove animations" is on, updated when the setting changes. */

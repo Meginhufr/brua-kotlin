@@ -3,6 +3,7 @@ package dev.brua.android
 import android.content.Context
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -19,14 +20,24 @@ import coil3.ColorImage
 import coil3.ImageLoader
 import coil3.decode.DataSource
 import coil3.intercept.Interceptor
+import coil3.request.ErrorResult
 import coil3.request.ImageResult
 import coil3.request.SuccessResult
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.ui.test.onNodeWithText
+import dev.brua.BruaEdge
+import java.io.IOException
 import dev.brua.ColorScheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.junit.Rule
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+
+/** Fails every request, as a file that can't be loaded. */
+private class Failing : Interceptor {
+    override suspend fun intercept(chain: Interceptor.Chain): ImageResult = ErrorResult(null, chain.request, IOException("No such file"))
+}
 
 /** Answers every request with a flat color and remembers what was asked for. */
 private class Recorder : Interceptor {
@@ -133,6 +144,51 @@ class BruaImageTest {
 
         requested()
         rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription)).assertCountEquals(0)
+    }
+
+    @Composable
+    private fun Reason(error: BruaImageError) = BasicText(
+        when (error) {
+            BruaImageError.NotReleased -> "not released"
+            is BruaImageError.Unreachable -> "unreachable"
+            is BruaImageError.File -> "file failed: ${error.url}"
+        },
+    )
+
+    private fun client(edge: FakeEdge) = BruaClient(BruaEdge("https://cdn.example/assets/org/", "en"), edge.client(), { emptyList() }, { 0L })
+
+    @Test
+    fun an_id_with_nothing_released_shows_the_error_with_its_reason() {
+        val edge = FakeEdge()
+        rule.setContent {
+            BruaImage("nothing-released", client(edge), Modifier.size(40.dp), imageLoader = loader,
+                loading = { BasicText("loading") }, error = { Reason(it) })
+        }
+
+        rule.waitUntil(5_000) { rule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(androidx.compose.ui.text.AnnotatedString("not released")))).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("not released").assertExists()
+    }
+
+    @Test
+    fun an_edge_that_cant_be_reached_shows_the_error_as_unreachable() {
+        val edge = FakeEdge().apply { down = true }
+        rule.setContent {
+            BruaImage("icon", client(edge), Modifier.size(40.dp), imageLoader = loader, error = { Reason(it) })
+        }
+
+        rule.waitUntil(5_000) { rule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(androidx.compose.ui.text.AnnotatedString("unreachable")))).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
+    fun a_file_that_fails_shows_the_error_with_its_url() {
+        val failing = ImageLoader.Builder(ApplicationProvider.getApplicationContext<Context>()).components { add(Failing()) }.build()
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                BruaImage(Sample.icon, Modifier.size(24.dp), supportedTypes = listOf("image/png"), imageLoader = failing, error = { Reason(it) })
+            }
+        }
+
+        rule.waitUntil(5_000) { rule.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(androidx.compose.ui.text.AnnotatedString("file failed: https://cdn.example/icon/light@1x.png")))).fetchSemanticsNodes().isNotEmpty() }
     }
 
     private fun requested(): String {
